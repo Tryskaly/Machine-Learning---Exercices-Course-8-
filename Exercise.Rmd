@@ -1,0 +1,101 @@
+---
+title: "Course 8 - Assigment"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r , include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Synopsis
+
+The goal of this project is to predict the manner in which people did the exercise in the testing set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+#### Data
+
+```{r,  echo=TRUE}
+rm(list=ls())
+library(knitr)
+library(caret)
+```
+
+
+Download and load the raw training data:
+```{r,      echo=TRUE}
+path <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(path, 'Training'); system("bunzip2 StormData.csv.bz2")
+Training <- read.csv("Training", header = TRUE, sep = ",")
+rm(path)
+```
+
+Download and load the raw test data:
+```{r,     echo=TRUE}
+path <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(path, 'Testing'); system("bunzip2 StormData.csv.bz2")
+Testing <- read.csv("Testing", header = TRUE, sep = ",")
+rm(path)
+```
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+
+#### Clean Training and Testing
+
+The timestamps and identity variables will not be used in the model, so they are removed from the data. Several of the columns contain mostly NA values or blanks for their observations, so these columns are also removed from the data. I set the threshold to filter down to only columns with less than 10% of NAs or blanks.
+
+```{r,  echo=TRUE}
+Training <- subset(Training, select=-c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+nans <- colSums(is.na(Training))
+Training <- subset(Training[nans==0])
+Training <- Training[,colMeans(Training == "", na.rm = TRUE) <= .1]
+
+Testing <- subset(Testing, select=-c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+nans <- colSums(is.na(Testing))
+Testing <- subset(Testing[nans==0])
+rm(nans)
+```
+
+There are enough samples to split the Testing dataset in a training and testing.
+```{r,  echo=TRUE}
+table(Training$classe)
+```
+```{r,  echo=TRUE}
+set.seed(12345)
+inTrain <- createDataPartition(Training$classe, p = .75, list = FALSE)
+training <- Training[inTrain,]
+testing <- Training[-inTrain,]
+```
+
+
+#### Decision tree
+
+Since we want to classify which kind of exercise did the people, le'ts try with a tree.
+```{r echo=TRUE, message=TRUE}
+modFit <- train(classe ~., method="rpart",data=training)
+library(rattle)
+fancyRpartPlot(modFit$finalModel)
+```
+Let's use the testing dataset to see if the tree decision is working.
+```{r,  echo=TRUE}
+confusionMatrix(testing$classe,predict(modFit,testing))
+```
+
+As we can observed, only the exercise E is well discriminate and the Accuracy in this case is really low.
+For these reason, a more complex algorithm is needed. So, let's try with a random forest
+
+#### Random Forest
+```{r,  echo=TRUE}
+modFit2 <- train(classe ~., method="rf",data=training, ntrees=100)
+confusionMatrix(testing$classe,predict(modFit2,testing))
+```
+
+Now the accuracy is 99% with really high sensitivity and specificity for the 5 classes of exercise.
+
+#### Testing
+
+The random forest model is used to predict the 20 classe variables in the Testing data.
+```{r,  echo=TRUE}
+exercises <- data.frame(id = Testing$problem_id, Prediction = c(as.character(predict(modFit2, Testing))))
+```
